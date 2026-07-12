@@ -1,0 +1,28 @@
+# sbt
+target/
+*.class
+*.jar
+
+# Scala CLI / Metals
+.scala-build/
+.bsp/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.metals/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local override — uncomment if you put real secrets in application.conf
+# application.conf
+
+# Translated output files (large binaries) — keep .gitkeep
+src/main/resources/output/*
+!src/main/resources/output/.gitkeep
+
+# Keep source/.gitkeep but not the pptx files themselves
+src/main/resources/source/*.pptx
