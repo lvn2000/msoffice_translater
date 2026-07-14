@@ -1,18 +1,12 @@
 package service
 
 import config.Config
-import sttp.client4.quick.*
-import sttp.client4.Response
-import sttp.model.StatusCode
-import io.circe.*
-import io.circe.parser.*
-import io.circe.syntax.*
+import service.provider.ProviderAdapter
 
-import scala.util.Try
 import scala.util.matching.Regex
 
-/** Translates text via the DeepSeek API with configurable language pair. */
-class TranslationService(config: Config):
+/** Translates text via a pluggable LLM provider adapter. */
+class TranslationService(config: Config, adapter: ProviderAdapter):
 
   private val NumberedLine: Regex = """^(\d+)[.)]\s*(.*)""".r
 
@@ -44,41 +38,21 @@ class TranslationService(config: Config):
       s"from ${config.sourceLang.trim} to ${config.targetLang.trim}"
     s"Translate the following text $direction. Return only the translation, no explanations."
 
-  /** Translate a single batch of text elements via the DeepSeek API. */
+  /** Translate a single batch of text elements. */
   def translateBatch(batch: service.Batch): Either[String, service.Batch] =
     val numberedText = batch.elements.zipWithIndex.map { (elem, i) =>
       s"${i + 1}. ${elem.originalText}"
     }.mkString("\n")
 
-    val body = Json.obj(
-      "model"       -> Json.fromString(config.modelName),
-      "messages"    -> Json.arr(
-        Json.obj("role" -> Json.fromString("system"),
-                 "content" -> Json.fromString(systemPrompt)),
-        Json.obj("role" -> Json.fromString("user"),
-                 "content" -> Json.fromString(numberedText))
-      ),
-      "temperature" -> Json.fromDoubleOrNull(0.0)
-    ).noSpaces
-
-    val response: Either[Throwable, Response[String]] = Try {
-      quickRequest
-        .post(uri"${config.apiUrl}")
-        .header("Authorization", s"Bearer ${config.apiKey}")
-        .header("Content-Type", "application/json")
-        .body(body)
-        .send()
-    }.toEither
-
     for
-      resp       <- response.left.map(e => s"HTTP error: ${e.getMessage}")
-      _          <- Either.cond(resp.code == StatusCode.Ok, (),
-                      s"API ${resp.code}: ${resp.body.take(500)}")
-      content    <- extractContent(resp.body)
-      parsed     <- parseTranslation(content, batch.elements.size)
-      updated     = batch.copy(elements = batch.elements.zip(parsed).map {
-                      case (e, t) => e.copy(translatedText = t)
-                    })
+      content <- adapter.sendRequest(
+                   config.apiKey, config.apiUrl, config.modelName,
+                   systemPrompt, numberedText
+                 )
+      parsed  <- parseTranslation(content, batch.elements.size)
+      updated  = batch.copy(elements = batch.elements.zip(parsed).map {
+                   case (e, t) => e.copy(translatedText = t)
+                 })
     yield updated
 
   /** Translate multiple batches sequentially.
@@ -112,45 +86,10 @@ class TranslationService(config: Config):
     batch.copy(elements = translated)
 
   private def translateSingle(text: String): Either[String, String] =
-    val body = Json.obj(
-      "model"       -> Json.fromString(config.modelName),
-      "messages"    -> Json.arr(
-        Json.obj("role"    -> Json.fromString("system"),
-                 "content" -> Json.fromString(singlePrompt)),
-        Json.obj("role"    -> Json.fromString("user"),
-                 "content" -> Json.fromString(text))
-      ),
-      "temperature" -> Json.fromDoubleOrNull(0.0)
-    ).noSpaces
-
-    val response = Try {
-      quickRequest
-        .post(uri"${config.apiUrl}")
-        .header("Authorization", s"Bearer ${config.apiKey}")
-        .header("Content-Type", "application/json")
-        .body(body)
-        .send()
-    }.toEither
-
-    for
-      resp    <- response.left.map(e => s"HTTP error: ${e.getMessage}")
-      _       <- Either.cond(resp.code == StatusCode.Ok, (),
-                   s"API ${resp.code}: ${resp.body.take(200)}")
-      content <- extractContent(resp.body)
-    yield content
-
-  /** Extract message content from DeepSeek response JSON. */
-  private def extractContent(body: String): Either[String, String] =
-    for
-      json    <- parse(body).left.map(e => s"Invalid JSON: $e")
-      content <- json.hcursor
-                   .downField("choices")
-                   .downN(0)
-                   .downField("message")
-                   .downField("content")
-                   .as[String]
-                   .left.map(_ => s"No content in response: ${body.take(200)}")
-    yield content.trim
+    adapter.sendRequest(
+      config.apiKey, config.apiUrl, config.modelName,
+      singlePrompt, text
+    )
 
   /** Parse numbered output ("1. text\\n2. text…") back into a list. */
   private def parseTranslation(
@@ -171,7 +110,6 @@ class TranslationService(config: Config):
     if translations.size == expected then
       Right(translations)
     else if translations.size < expected && expected <= 3 then
-      // Small batches — the model may have merged lines. Use raw lines.
       val raw = content.split("\n").toList.map(_.trim).filter(_.nonEmpty)
       Right(padOrTruncate(raw, expected))
     else
@@ -184,7 +122,6 @@ class TranslationService(config: Config):
   private def truncate(s: String, n: Int): String =
     if s.length <= n then s else s.take(n) + "..."
 
-  /** Returns true if the source language value means "auto-detect". */
   private def isAutoDetect(lang: String): Boolean =
     val v = lang.trim.toLowerCase
     v.isEmpty || v == "auto" || v == "automatically" || v == "autodetect"

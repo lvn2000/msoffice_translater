@@ -12,6 +12,7 @@ case class Config(
     apiKey: String,
     apiUrl: String,
     modelName: String,
+    provider: String,
     sourceDir: String,
     outputDir: String,
     maxBatchSize: Int,
@@ -67,6 +68,12 @@ object Config:
       DefaultModel
     )
 
+    val provider = resolveStr(
+      tsConfig, "provider",
+      "PROVIDER",
+      "openai"
+    )
+
     val maxBatchSize = resolveInt(
       tsConfig, "app.max-batch-size",
       "MAX_BATCH_SIZE",
@@ -89,6 +96,7 @@ object Config:
       apiKey       = apiKey,
       apiUrl       = apiUrl,
       modelName    = modelName,
+      provider     = provider,
       sourceDir    = sourceDir,
       outputDir    = outputDir,
       maxBatchSize = maxBatchSize,

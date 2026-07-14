@@ -1,5 +1,6 @@
 import config.Config
 import service.{PptxService, TranslationService}
+import service.provider.{ProviderAdapter, OpenAiAdapter, GeminiAdapter, ClaudeAdapter}
 
 import java.io.File
 import scala.util.{Try, Using}
@@ -7,8 +8,8 @@ import scala.util.{Try, Using}
 /** Application entry point.
   *
   * Reads all `.pptx` files from the source directory, translates their text
-  * content from Ukrainian to Russian using the DeepSeek API, and writes the
-  * translated copies to the output directory with a `_ru` suffix.
+  * content using the configured LLM provider, and writes translated copies
+  * to the output directory with a `_ru` suffix.
   */
 object Main:
 
@@ -22,6 +23,9 @@ object Main:
     else
       s"${cfg.sourceLang} → ${cfg.targetLang}"
     println(s"Direction:   $direction")
+
+    val adapter = selectAdapter(cfg.provider)
+    println(s"Provider:    ${adapter.name}")
     println(s"Model:       ${cfg.modelName}")
     println()
 
@@ -42,7 +46,7 @@ object Main:
       println("No .pptx files found in source directory.")
       System.exit(0)
 
-    val translator = TranslationService(cfg)
+    val translator = TranslationService(cfg, adapter)
 
     pptxFiles.foreach { file =>
       processFile(file, outputDir, translator, cfg.maxBatchSize)
@@ -59,6 +63,17 @@ object Main:
   private def isAutoDetect(lang: String): Boolean =
     val v = lang.trim.toLowerCase
     v.isEmpty || v == "auto" || v == "automatically" || v == "autodetect"
+
+  /** Select the provider adapter by name. */
+  private def selectAdapter(name: String): ProviderAdapter =
+    name.trim.toLowerCase match
+      case "openai" => OpenAiAdapter
+      case "gemini" => GeminiAdapter
+      case "claude" => ClaudeAdapter
+      case other =>
+        System.err.println(s"Unknown provider '$other'. Valid: openai, gemini, claude")
+        System.exit(1)
+        OpenAiAdapter // unreachable
 
   /** Find a non-existing output file by incrementing a numeric suffix.
     * Tries `name.pptx`, then `name_1.pptx`, `name_2.pptx`, etc.
