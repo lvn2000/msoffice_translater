@@ -2,17 +2,11 @@ package config
 
 import com.typesafe.config.{ConfigFactory, Config => TsConfig}
 
-import java.io.File
-
 /** Application configuration.
   *
-  * Resolution order (each level overrides the previous):
-  *  1. Hardcoded defaults
-  *  2. `application.conf` on the classpath
-  *  3. Environment variables
-  *
-  * The API key must be set either in `application.conf` or via the
-  * `DEEPSEEK_API_KEY` environment variable, otherwise loading fails.
+  * Reads from `application.conf` on the classpath, with environment variable
+  * overrides. The API key must be set via the `DEEPSEEK_API_KEY` environment
+  * variable, otherwise loading fails.
   */
 case class Config(
     apiKey: String,
@@ -34,16 +28,18 @@ object Config:
   def load(): Config =
     val tsConfig: TsConfig = ConfigFactory.load().resolve()
 
-    // --- resolve each value: application.conf first, then env var, then hardcoded default ---
-    val apiKey = resolveSecret(
-      tsConfig, "deepseek.api-key",
-      "DEEPSEEK_API_KEY",
-      None
-    ).getOrElse(
+    // Name of the env var that holds the API key — from config, default DEEPSEEK_API_KEY
+    val apiKeyEnvVar =
+      if tsConfig.hasPath("deepseek.api-key-env") then tsConfig.getString("deepseek.api-key-env")
+      else "DEEPSEEK_API_KEY"
+
+    // API key — only from the environment variable named above
+    val apiKey = sys.env.getOrElse(
+      apiKeyEnvVar,
       sys.error(
-        "DEEPSEEK_API_KEY is not set. Provide it in application.conf:\n" +
-        "  deepseek.api-key = \"sk-...\"\n" +
-        "or via the DEEPSEEK_API_KEY environment variable."
+        s"$apiKeyEnvVar is not set.\n" +
+        "Export it in your shell:\n" +
+        s"  export $apiKeyEnvVar=\"sk-...\""
       )
     )
 
@@ -113,20 +109,6 @@ object Config:
   ): String =
     if cfg.hasPath(path) then cfg.getString(path)
     else sys.env.getOrElse(env, fallback)
-
-  /** Read a secret (e.g. API key): application.conf > env var.
-    * Returns `None` if neither is set. */
-  private def resolveSecret(
-      cfg: TsConfig,
-      path: String,
-      env: String,
-      fallback: Option[String]
-  ): Option[String] =
-    if cfg.hasPath(path) then
-      val v = cfg.getString(path).trim
-      if v.nonEmpty then Some(v) else fallback
-    else
-      sys.env.get(env).orElse(fallback)
 
   /** Read an integer: application.conf > env var > fallback. */
   private def resolveInt(

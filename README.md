@@ -51,24 +51,22 @@ The default language direction is **Ukrainian → Russian**, but any language pa
 
 ### 1. Set the API key
 
-**Option A — environment variable** (recommended):
+The API key is read from the environment variable named in `deepseek.api-key-env` in `application.conf` (default: `DEEPSEEK_API_KEY`):
 
 ```bash
 export DEEPSEEK_API_KEY="sk-your-key-here"
 ```
 
-**Option B — `application.conf`**:
+> **Tip:** add this line to your `~/.bashrc` or `~/.profile` to avoid typing it every time.
 
-Edit `src/main/resources/application.conf` and uncomment the key line:
-
+You can use a different env var name by changing `application.conf`:
 ```hocon
 deepseek {
-  api-key = "sk-your-key-here"
+  api-key-env = "MY_CUSTOM_KEY"
   ...
 }
 ```
-
-> If you put a real key in `application.conf`, uncomment `application.conf` in `.gitignore` first to prevent accidental commits.
+then `export MY_CUSTOM_KEY="sk-..."`.
 
 ### 2. Place source files
 
@@ -96,7 +94,7 @@ All settings can be defined in `src/main/resources/application.conf` or overridd
 
 | Setting | `application.conf` path | Env var | Default |
 |---|---|---|---|
-| API key | `deepseek.api-key` | `DEEPSEEK_API_KEY` | *(required)* |
+| API key env var name | `deepseek.api-key-env` | — | `DEEPSEEK_API_KEY` |
 | API URL | `deepseek.api-url` | `DEEPSEEK_API_URL` | `https://api.deepseek.com/v1/chat/completions` |
 | Model | `deepseek.model` | `DEEPSEEK_MODEL` | `deepseek-chat` |
 | Source directory | `app.source-dir` | `SOURCE_DIR` | `src/main/resources/source` |
