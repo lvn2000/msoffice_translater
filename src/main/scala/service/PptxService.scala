@@ -5,27 +5,58 @@ import org.apache.poi.xslf.usermodel.*
 import java.io.{File, FileInputStream, FileOutputStream}
 
 import scala.jdk.CollectionConverters.*
-import scala.util.Using
+import scala.util.{Try, Using}
 
 /** Handles reading text from and writing translated text back to pptx files. */
-object PptxService:
+object PptxService extends DocumentFormat:
 
-  private val TextDelimiter = "\n---\n"
+  override val extensions: Seq[String] = Seq("pptx")
 
-  /** Extract all text elements from a pptx file.
-    *
-    * Walks every slide, shape, paragraph and text run, returning them in
-    * document order along with their location indices so they can be
-    * reassembled later.
-    */
-  def extractTexts(file: File): Seq[TextElement] =
-    Using.resource(new XMLSlideShow(FileInputStream(file))) { ppt =>
-      for
-        (slide, si) <- ppt.getSlides.asScala.to(LazyList).zipWithIndex
-        (shape, shi) <- slide.getShapes.asScala.to(LazyList).zipWithIndex
-        elem <- extractFromShape(slide, si, shape, shi)
-      yield elem
-    }
+  override def extractTexts(file: File): Either[String, Seq[TextElement]] =
+    Try {
+      Using.resource(new XMLSlideShow(FileInputStream(file))) { ppt =>
+        for
+          (slide, si) <- ppt.getSlides.asScala.to(LazyList).zipWithIndex
+          (shape, shi) <- slide.getShapes.asScala.to(LazyList).zipWithIndex
+          elem <- extractFromShape(slide, si, shape, shi)
+        yield elem
+      }
+    }.toEither.left.map(e => s"Failed to read pptx: ${e.getMessage}")
+
+  override def writeTranslated(
+      source: File,
+      elements: Seq[TextElement],
+      outputFile: File
+  ): Either[String, Unit] =
+    val lookup = DocumentService.buildLookup(elements)
+    Try {
+      Using.resources(
+        new XMLSlideShow(FileInputStream(source)),
+        new FileOutputStream(outputFile)
+      ) { (ppt, out) =>
+        for
+          (slide, si) <- ppt.getSlides.asScala.toSeq.zipWithIndex
+          (shape, shi) <- slide.getShapes.asScala.toSeq.zipWithIndex
+        do
+          shape match
+            case ts: XSLFTextShape => writeTextShape(ts, si, shi, None, lookup)
+            case tbl: XSLFTable    => writeTable(tbl, si, shi, lookup)
+            case grp: XSLFGroupShape =>
+              grp.getShapes.asScala.toSeq.zipWithIndex.foreach { (child, ci) =>
+                child match
+                  case ts: XSLFTextShape => writeTextShape(ts, si, shi, None, lookup)
+                  case tbl: XSLFTable    => writeTable(tbl, si, shi, lookup)
+                  case _                => ()
+              }
+            case _ => ()
+
+        ppt.write(out)
+      }
+    }.toEither.left.map(e => s"Failed to write pptx: ${e.getMessage}")
+
+  // --------------------------------------------------------------------------
+  // Private helpers
+  // --------------------------------------------------------------------------
 
   private def extractFromShape(
       slide: XSLFSlide,
@@ -82,52 +113,6 @@ object PptxService:
       originalText   = text
     )
 
-  /** Group texts into batches for translation, separated by a delimiter.
-    * Returns the original elements alongside their batch index and position
-    * within the batch.
-    */
-  def prepareBatches(
-      elements: Seq[TextElement],
-      maxBatchSize: Int
-  ): Seq[Batch] =
-    elements.grouped(maxBatchSize).toSeq.zipWithIndex.map { (group, idx) =>
-      val text = group.map(_.originalText).mkString(TextDelimiter)
-      Batch(idx, text, group.toList)
-    }
-
-  /** Write translated texts back into a copy of the original pptx. */
-  def writeTranslated(
-      source: File,
-      elements: Seq[TextElement],
-      outputFile: File
-  ): Unit =
-    // Build a lookup: (slide, shape, tableRow, paragraph, run) -> translated text
-    val lookup: Map[(Int, Int, Option[Int], Int, Int), String] =
-      elements.map(e => (e.slideIndex, e.shapeIndex, e.tableRowIndex, e.paragraphIndex, e.runIndex) -> e.translatedText).toMap
-
-    Using.resources(
-      new XMLSlideShow(FileInputStream(source)),
-      new FileOutputStream(outputFile)
-    ) { (ppt, out) =>
-      for
-        (slide, si) <- ppt.getSlides.asScala.toSeq.zipWithIndex
-        (shape, shi) <- slide.getShapes.asScala.toSeq.zipWithIndex
-      do
-        shape match
-          case ts: XSLFTextShape => writeTextShape(ts, si, shi, None, lookup)
-          case tbl: XSLFTable    => writeTable(tbl, si, shi, lookup)
-          case grp: XSLFGroupShape =>
-            grp.getShapes.asScala.toSeq.zipWithIndex.foreach { (child, ci) =>
-              child match
-                case ts: XSLFTextShape => writeTextShape(ts, si, shi, None, lookup)
-                case tbl: XSLFTable    => writeTable(tbl, si, shi, lookup)
-                case _                => ()
-            }
-          case _ => ()
-
-      ppt.write(out)
-    }
-
   private def writeTextShape(
       ts: XSLFTextShape,
       slideIndex: Int,
@@ -157,9 +142,4 @@ object PptxService:
       val key = (slideIndex, shapeIndex, Some(ri), pi, rui)
       lookup.get(key).foreach(run.setText)
 
-// ---------------------------------------------------------------------------
-// Helper types
-// ---------------------------------------------------------------------------
-
-/** A batch of text elements to translate together in one API call. */
-case class Batch(index: Int, combinedText: String, elements: List[TextElement])
+end PptxService

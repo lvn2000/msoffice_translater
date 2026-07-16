@@ -1,10 +1,13 @@
-name         := "pptx-translator"
+name         := "doc-translator"
 version      := "1.0.0"
 scalaVersion := "3.6.4"
 
 libraryDependencies ++= Seq(
-  // Apache POI for processing pptx files
+  // Apache POI for processing pptx and docx files
   "org.apache.poi" % "poi-ooxml" % "5.3.0",
+
+  // Apache PDFBox for processing pdf files
+  "org.apache.pdfbox" % "pdfbox" % "3.0.2",
 
   // HTTP client for DeepSeek API calls
   "com.softwaremill.sttp.client4" %% "core" % "4.0.0-M19",

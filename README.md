@@ -1,6 +1,8 @@
-# pptx-translator
+# doc-translator
 
-Translate Microsoft PowerPoint (`.pptx`) files using configurable LLM providers (DeepSeek, ChatGPT, Gemini, Claude). Only text is translated — images, charts, and other media are preserved as-is.
+Translate Microsoft Office documents (`.pptx`, `.docx`, `.xls`, `.xlsx`) and PDF files (`.pdf`) using configurable LLM providers (DeepSeek, ChatGPT, Gemini, Claude). Only text is translated — images, charts, and other media are preserved as-is.
+
+> **Note on PDF:** Since PDF is a rendering format without a structured text-run model, translated text is written into a **new** PDF. Original graphics, images, and precise layout are not preserved. For PPTX and DOCX all original formatting and media are retained.
 
 The default language direction is **Ukrainian → Russian**, but any language pair is supported (configured in `application.conf`). Source language can be auto-detected by the model.
 
@@ -9,10 +11,12 @@ The default language direction is **Ukrainian → Russian**, but any language pa
 - **Configurable language direction** — set any source/target pair, or let the model auto-detect the source
 - **Batch translation** — multiple text segments are sent in a single API call for efficiency (configurable batch size)
 - **Formatting preservation** — font style, size, color, bold/italic, and other formatting are retained
-- **Table support** — text inside table cells is translated
-- **Group shape support** — text inside nested grouped shapes is handled
+- **PPTX support** — slides, text shapes, tables, grouped shapes
+- **DOCX support** — body paragraphs and table cells (including nested per-cell paragraphs)
+- **PDF support** — per-page paragraph extraction; translated output is a new PDF
+- **XLS/XLSX support** — string cells in all sheets; numeric, boolean and formula cells are left untouched
 - **Pluggable provider architecture** — switch between DeepSeek, ChatGPT, Gemini, or Claude with one config change
-- **Auto-counter for output files** — if `_ru.pptx` already exists, creates `_ru_1.pptx`, `_ru_2.pptx`, etc. (never overwrites)
+- **Auto-counter for output files** — if `_ru.pptx`/`_ru.docx` already exists, creates `_ru_1.pptx`, `_ru_2.pptx`, etc. (never overwrites)
 - **Idempotent output** — translated files get `_ru` suffix, originals are untouched
 
 ## Requirements
@@ -36,7 +40,7 @@ The default language direction is **Ukrainian → Russian**, but any language pa
 │       ├── resources/
 │       │   ├── application.conf        ← configuration (key, paths, language, model)
 │       │   ├── logback.xml
-│       │   ├── source/                  ← put .pptx files here
+│       │   ├── source/                  ← put .pptx / .docx / .pdf / .xls / .xlsx files here
 │       │   │   └── .gitkeep
 │       │   └── output/                  ← translated files appear here
 │       │       └── .gitkeep
@@ -44,8 +48,13 @@ The default language direction is **Ukrainian → Russian**, but any language pa
 │           ├── Main.scala               ← entry point
 │           ├── config/Config.scala      ← reads application.conf + env vars
 │           ├── model/TextElement.scala  ← data model for text positions
+│           ├── model/Batch.scala        ← batch data model
 │           └── service/
-│               ├── PptxService.scala    ← Apache POI read/write
+│               ├── DocumentService.scala← shared batching utilities
+│               ├── DocxService.scala    ← Apache POI docx read/write
+│               ├── PdfService.scala     ← Apache PDFBox pdf read/write
+│               ├── PptxService.scala    ← Apache POI pptx read/write
+│               ├── XlsService.scala     ← Apache POI xls/xlsx read/write
 │               ├── TranslationService.scala ← batch & parse logic
 │               └── provider/
 │                   ├── ProviderAdapter.scala  ← trait
@@ -81,6 +90,9 @@ then `export MY_CUSTOM_KEY="sk-..."`.
 
 ```bash
 cp /path/to/your/file.pptx src/main/resources/source/
+cp /path/to/your/file.docx src/main/resources/source/
+cp /path/to/your/file.pdf src/main/resources/source/
+cp /path/to/your/file.xlsx src/main/resources/source/
 ```
 
 ### 3. Run
@@ -95,6 +107,9 @@ Translated files appear in `src/main/resources/output/` with `_ru` suffix, e.g.:
 
 ```
 для Кирг Актуальні зміни в МСА.pptx → для Кирг Актуальні зміни в МСА_ru.pptx
+report.docx → report_ru.docx
+presentation.pdf → presentation_ru.pdf
+budget.xlsx → budget_ru.xlsx
 ```
 
 ## Configuration
@@ -188,24 +203,24 @@ The translation API processes multiple text segments in one call. Default is 10 
 
 ```bash
 sbt assembly
-java -jar target/scala-3.6.4/pptx-translator-assembly-1.0.0.jar
+java -jar target/scala-3.6.4/doc-translator-assembly-1.0.0.jar
 ```
 
 When running from a JAR, ensure the source/output directories exist on the filesystem and are configured via environment variables or `application.conf` next to the JAR.
 
 ## How It Works
 
-1. **Extract** — `PptxService` opens the `.pptx` with Apache POI and walks every slide → shape → paragraph → text run, recording each text's position
+1. **Extract** — the appropriate service (`PptxService` for `.pptx`, `DocxService` for `.docx`, `PdfService` for `.pdf`, `XlsService` for `.xls`/`.xlsx`) opens the file and walks every text run/paragraph/cell, recording each text's position
 2. **Batch** — texts are grouped into batches (default 10)
 3. **Translate** — each batch is sent via the configured `ProviderAdapter` (OpenAI-compatible, Gemini, or Claude) as a numbered list with a system prompt for the configured language direction. The response is parsed back into individual translations
-4. **Write** — `PptxService` opens the original file again and replaces each text run using its position as a lookup key, then saves to the output folder with `_ru` suffix
+4. **Write** — the service writes the translated text back. For PPTX/DOCX/XLS this preserves all original formatting and media. For PDF, a new document is created with the translated text
 
 ## Error Handling
 
 - **Batch failures** — if a batch returns a mismatched count of translations, each text in that batch is retried individually
 - **Unreachable API** — the app prints the error and continues with the next batch/file
 - **Missing API key** — the app exits immediately with a clear message
-- **Corrupt pptx** — the file is skipped and an error is printed
+- **Corrupt file** — the file is skipped and an error is printed
 
 ## Environment variables reference
 

@@ -1,6 +1,7 @@
 package service
 
 import config.Config
+import model.Batch
 import service.provider.ProviderAdapter
 
 import scala.util.matching.Regex
@@ -39,7 +40,7 @@ class TranslationService(config: Config, adapter: ProviderAdapter):
     s"Translate the following text $direction. Return only the translation, no explanations."
 
   /** Translate a single batch of text elements. */
-  def translateBatch(batch: service.Batch): Either[String, service.Batch] =
+  def translateBatch(batch: Batch): Either[String, Batch] =
     val numberedText = batch.elements.zipWithIndex.map { (elem, i) =>
       s"${i + 1}. ${elem.originalText}"
     }.mkString("\n")
@@ -58,7 +59,7 @@ class TranslationService(config: Config, adapter: ProviderAdapter):
   /** Translate multiple batches sequentially.
     * Failed batches fall back to per-text translation.
     */
-  def translateBatches(batches: Seq[service.Batch]): Seq[service.Batch] =
+  def translateBatches(batches: Seq[Batch]): Seq[Batch] =
     batches.zipWithIndex.map { case (batch, idx) =>
       print(s"  Batch ${idx + 1}/${batches.size} (${batch.elements.size} texts)... ")
       translateBatch(batch) match
@@ -75,7 +76,7 @@ class TranslationService(config: Config, adapter: ProviderAdapter):
   // Private helpers
   // --------------------------------------------------------------------------
 
-  private def translateIndividually(batch: service.Batch): service.Batch =
+  private def translateIndividually(batch: Batch): Batch =
     val translated = batch.elements.map { elem =>
       translateSingle(elem.originalText) match
         case Right(t) => elem.copy(translatedText = t)

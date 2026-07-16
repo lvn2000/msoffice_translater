@@ -1,15 +1,18 @@
 import config.Config
-import service.{PptxService, TranslationService}
+import service.{DocumentFormat, DocumentService, TranslationService}
 import service.provider.{ProviderAdapter, OpenAiAdapter, GeminiAdapter, ClaudeAdapter}
 
 import java.io.File
-import scala.util.{Try, Using}
+import scala.util.Try
 
 /** Application entry point.
   *
-  * Reads all `.pptx` files from the source directory, translates their text
-  * content using the configured LLM provider, and writes translated copies
-  * to the output directory with a `_ru` suffix.
+  * Reads all supported files from the source directory, translates their
+  * text content using the configured LLM provider, and writes translated
+  * copies to the output directory with a `_ru` suffix.
+  *
+  * Supported formats are defined by `DocumentFormat` type class instances
+  * registered in `DocumentService.formatRegistry`.
   */
 object Main:
 
@@ -38,18 +41,17 @@ object Main:
 
     outputDir.mkdirs()
 
-    val pptxFiles = sourceDir.listFiles().filter { f =>
-      f.isFile && f.getName.toLowerCase.endsWith(".pptx")
-    }.toSeq.sortBy(_.getName)
+    val files = discoverFiles(sourceDir)
 
-    if pptxFiles.isEmpty then
-      println("No .pptx files found in source directory.")
+    if files.isEmpty then
+      val known = DocumentService.formatRegistry.keys.toSeq.sorted.mkString(", ")
+      println(s"No supported files found in source directory. Known extensions: $known")
       System.exit(0)
 
     val translator = TranslationService(cfg, adapter)
 
-    pptxFiles.foreach { file =>
-      processFile(file, outputDir, translator, cfg.maxBatchSize)
+    files.foreach { (file, format) =>
+      processFile(file, format, outputDir, translator, cfg.maxBatchSize)
       println()
     }
 
@@ -75,53 +77,74 @@ object Main:
         System.exit(1)
         OpenAiAdapter // unreachable
 
+  /** Discover supported files and their DocumentFormat in the source directory. */
+  private def discoverFiles(dir: File): Seq[(File, DocumentFormat)] =
+    val allExts = DocumentService.formatRegistry.keySet
+    dir.listFiles()
+      .filter(_.isFile)
+      .flatMap { f =>
+        val ext = extensionOf(f)
+        DocumentService.formatForExtension(ext).map(fmt => (f, fmt))
+      }
+      .toSeq
+      .sortBy(_._1.getName)
+
   /** Find a non-existing output file by incrementing a numeric suffix.
-    * Tries `name.pptx`, then `name_1.pptx`, `name_2.pptx`, etc.
+    * Tries `name.ext`, then `name_1.ext`, `name_2.ext`, etc.
     */
-  private def resolveOutputFile(dir: File, nameBase: String): File =
+  private def resolveOutputFile(dir: File, nameBase: String, extension: String): File =
     var counter = 0
-    var file    = File(dir, s"$nameBase.pptx")
+    var file    = File(dir, s"$nameBase.$extension")
     while file.exists() do
       counter += 1
-      file = File(dir, s"${nameBase}_$counter.pptx")
+      file = File(dir, s"${nameBase}_$counter.$extension")
     file
 
   private def processFile(
       source: File,
+      format: DocumentFormat,
       outputDir: File,
       translator: TranslationService,
       maxBatchSize: Int
   ): Unit =
-    val baseName = source.getName.replaceAll("""\.pptx$""", "_ru")
-    val output   = resolveOutputFile(outputDir, baseName)
+    val ext      = extensionOf(source)
+    val baseName = source.getName.replaceAll(raw"\\." + ext + "$", "_ru")
+    val output   = resolveOutputFile(outputDir, baseName, ext)
 
     println(s"[PROCESS] ${source.getName} → ${output.getName}")
     println(s"  Extracting text...")
 
-    val elements = Try(PptxService.extractTexts(source)).toEither match
+    format.extractTexts(source) match
+      case Left(err) =>
+        System.err.println(s"  [ERROR] $err")
+        return
       case Right(elems) =>
         println(s"  Found ${elems.size} text segments.")
         if elems.isEmpty then
           println(s"  No text to translate — copying as-is.")
           java.nio.file.Files.copy(source.toPath, output.toPath)
           return
-        elems
-      case Left(e) =>
-        System.err.println(s"  [ERROR] Failed to read pptx: ${e.getMessage}")
-        return
 
-    val batches = PptxService.prepareBatches(elements, maxBatchSize)
+        val batches = DocumentService.prepareBatches(elems, maxBatchSize)
 
-    println(s"  Translating (${batches.size} batches)...")
-    val translatedBatches = translator.translateBatches(batches)
+        println(s"  Translating (${batches.size} batches)...")
+        val translatedBatches = translator.translateBatches(batches)
 
-    val allTranslated = translatedBatches.flatMap(_.elements)
+        val allTranslated = translatedBatches.flatMap(_.elements)
 
-    val failedCount = allTranslated.count(_.translatedText.isEmpty)
-    if failedCount > 0 then
-      println(s"  Warning: $failedCount text segments could not be translated.")
+        val failedCount = allTranslated.count(_.translatedText.isEmpty)
+        if failedCount > 0 then
+          println(s"  Warning: $failedCount text segments could not be translated.")
 
-    println(s"  Writing translated file...")
-    PptxService.writeTranslated(source, allTranslated, output)
+        println(s"  Writing translated file...")
+        format.writeTranslated(source, allTranslated, output) match
+          case Left(err) =>
+            System.err.println(s"  [ERROR] $err")
+          case Right(()) =>
+            println(s"  ✓ Saved: ${output.getName}")
 
-    println(s"  ✓ Saved: ${output.getName}")
+  /** Return the file extension without the leading dot. */
+  private def extensionOf(file: File): String =
+    val name = file.getName
+    val dot  = name.lastIndexOf('.')
+    if dot >= 0 then name.substring(dot + 1).toLowerCase else ""
