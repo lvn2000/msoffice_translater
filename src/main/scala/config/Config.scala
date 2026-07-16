@@ -17,13 +17,15 @@ case class Config(
     outputDir: String,
     maxBatchSize: Int,
     sourceLang: String,
-    targetLang: String
+    targetLang: String,
+    langCode: String
 )
 
 object Config:
   private val DefaultApiUrl   = "https://api.deepseek.com/v1/chat/completions"
   private val DefaultModel    = "deepseek-chat"
   private val DefaultMaxBatch = 10
+  private val DefaultLangCode = "ru"
 
   /** Load configuration: `application.conf` + env overrides. */
   def load(): Config =
@@ -92,6 +94,12 @@ object Config:
       "Russian"
     )
 
+    val langCode = resolveStr(
+      tsConfig, "app.lang-code",
+      "LANG_CODE",
+      DefaultLangCode
+    )
+
     Config(
       apiKey       = apiKey,
       apiUrl       = apiUrl,
@@ -101,7 +109,8 @@ object Config:
       outputDir    = outputDir,
       maxBatchSize = maxBatchSize,
       sourceLang   = sourceLang,
-      targetLang   = targetLang
+      targetLang   = targetLang,
+      langCode     = langCode
     )
 
   // --------------------------------------------------------------------------

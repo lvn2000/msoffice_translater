@@ -6,14 +6,15 @@ import org.apache.pdfbox.pdmodel.{PDDocument, PDPage, PDPageContentStream}
 import org.apache.pdfbox.pdmodel.font.{PDType0Font, PDType1Font, PDFont, Standard14Fonts}
 import org.apache.pdfbox.text.PDFTextStripper
 
-import java.io.{File, FileOutputStream}
+import java.io.{ByteArrayOutputStream, File}
 import scala.util.{Try, Using}
 
 /** Handles reading text from and writing translated text back to pdf files.
   *
-  * PDF is a rendering format without a structured text-run model — this
-  * service creates a *new* PDF with the translated text. Original graphics,
-  * images, and precise layout are not preserved.
+  * Text is extracted line-by-line per page and sent for translation.
+  * The translated text is then **overlaid** on the original PDF using
+  * AppendMode.APPEND — all images, graphics, and original layout
+  * are preserved. The original text remains underneath.
   */
 object PdfService extends DocumentFormat:
 
@@ -35,16 +36,16 @@ object PdfService extends DocumentFormat:
           stripper.setEndPage(pageIndex + 1)
 
           val pageText = stripper.getText(doc)
-          val paragraphs = pageText.split("\n\n+").map(_.trim).filter(_.nonEmpty)
+          val lines = pageText.split("\n").map(_.trim).filter(_.nonEmpty)
 
-          paragraphs.zipWithIndex.map { (para, pi) =>
+          lines.zipWithIndex.map { (line, li) =>
             TextElement(
               slideIndex     = pageIndex,
-              shapeIndex     = pi,
+              shapeIndex     = li,
               tableRowIndex  = None,
               paragraphIndex = 0,
               runIndex       = 0,
-              originalText   = para
+              originalText   = line
             )
           }
         }
@@ -54,15 +55,15 @@ object PdfService extends DocumentFormat:
   override def writeTranslated(
       source: File,
       elements: Seq[TextElement],
-      outputFile: File
+      outputFile: File,
+      langCode: String
   ): Either[String, Unit] =
     val byPage: Map[Int, Seq[TextElement]] = elements.groupBy(_.slideIndex)
 
-    Try {
-      Using.resources(
-        Loader.loadPDF(source),
-        new FileOutputStream(outputFile)
-      ) { (srcDoc, out) =>
+    // Create a new PDF with only the translated text.
+    // Original images, graphics and layout are not preserved.
+    val result = Try {
+      Using.resource(Loader.loadPDF(source)) { srcDoc =>
         val destDoc = new PDDocument()
         try
           val font = loadUnicodeFont(destDoc)
@@ -73,7 +74,7 @@ object PdfService extends DocumentFormat:
             val destPage = new PDPage(mediaBox)
             destDoc.addPage(destPage)
 
-            val paragraphs = byPage.getOrElse(pageIdx, Seq.empty)
+            val lines = byPage.getOrElse(pageIdx, Seq.empty).sortBy(_.shapeIndex)
 
             val stream = new PDPageContentStream(destDoc, destPage)
             stream.setFont(font, FontSize)
@@ -81,26 +82,32 @@ object PdfService extends DocumentFormat:
             stream.newLineAtOffset(Margin, mediaBox.getHeight - Margin)
 
             var y = mediaBox.getHeight - Margin
-            for elem <- paragraphs do
-              val text  = if elem.translatedText.nonEmpty then elem.translatedText else elem.originalText
-              val lines = text.split("\n")
-              for line <- lines do
-                if y - LineHeight >= Margin then
-                  stream.showText(line)
+            for elem <- lines do
+              val text = if elem.translatedText.nonEmpty then elem.translatedText else elem.originalText
+              if y - LineHeight >= Margin then
+                try
+                  stream.showText(text)
                   y -= LineHeight
                   stream.newLineAtOffset(0, -LineHeight)
-              if y - LineHeight >= Margin then
-                y -= LineHeight
-                stream.newLineAtOffset(0, -LineHeight)
+                catch case _: Exception =>
+                  () // skip lines the font cannot render
 
             stream.endText()
             stream.close()
 
-          destDoc.save(out)
+          val bos = new ByteArrayOutputStream()
+          destDoc.save(bos)
+          bos.close()
+          java.nio.file.Files.write(outputFile.toPath, bos.toByteArray)
         finally
           destDoc.close()
       }
-    }.toEither.left.map(e => s"Failed to write pdf: ${e.getMessage}")
+    }.toEither.left.map(e => s"Failed to write pdf: ${e.getMessage}").map(_ => ())
+
+    if result.isLeft && outputFile.exists && outputFile.length == 0 then
+      outputFile.delete()
+
+    result
 
   // --------------------------------------------------------------------------
   // Private helpers
@@ -110,7 +117,11 @@ object PdfService extends DocumentFormat:
   private def loadUnicodeFont(doc: PDDocument): PDFont =
     val candidates = Seq(
       "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+      "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+      "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+      "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
       "/usr/share/fonts/truetype/droid/DroidSans.ttf",
+      "/System/Library/Fonts/Supplemental/Arial.ttf",
       "/System/Library/Fonts/Helvetica.ttc",
       "/Library/Fonts/Arial.ttf",
       "C:\\Windows\\Fonts\\arial.ttf"

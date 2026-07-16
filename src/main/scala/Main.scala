@@ -3,13 +3,12 @@ import service.{DocumentFormat, DocumentService, TranslationService}
 import service.provider.{ProviderAdapter, OpenAiAdapter, GeminiAdapter, ClaudeAdapter}
 
 import java.io.File
-import scala.util.Try
 
 /** Application entry point.
   *
   * Reads all supported files from the source directory, translates their
   * text content using the configured LLM provider, and writes translated
-  * copies to the output directory with a `_ru` suffix.
+  * copies to the output directory with a language-code suffix.
   *
   * Supported formats are defined by `DocumentFormat` type class instances
   * registered in `DocumentService.formatRegistry`.
@@ -30,6 +29,7 @@ object Main:
     val adapter = selectAdapter(cfg.provider)
     println(s"Provider:    ${adapter.name}")
     println(s"Model:       ${cfg.modelName}")
+    println(s"Lang code:   ${cfg.langCode}")
     println()
 
     val sourceDir = new File(cfg.sourceDir)
@@ -51,7 +51,7 @@ object Main:
     val translator = TranslationService(cfg, adapter)
 
     files.foreach { (file, format) =>
-      processFile(file, format, outputDir, translator, cfg.maxBatchSize)
+      processFile(file, format, outputDir, translator, cfg.maxBatchSize, cfg.langCode)
       println()
     }
 
@@ -79,7 +79,6 @@ object Main:
 
   /** Discover supported files and their DocumentFormat in the source directory. */
   private def discoverFiles(dir: File): Seq[(File, DocumentFormat)] =
-    val allExts = DocumentService.formatRegistry.keySet
     dir.listFiles()
       .filter(_.isFile)
       .flatMap { f =>
@@ -89,15 +88,17 @@ object Main:
       .toSeq
       .sortBy(_._1.getName)
 
-  /** Find a non-existing output file by incrementing a numeric suffix.
-    * Tries `name.ext`, then `name_1.ext`, `name_2.ext`, etc.
+  /** Build an output filename: stem_langCode.ext, with counter if needed.
+    *
+    * Example: "presentation.pptx" with langCode "ru" → "presentation_ru.pptx"
+    * If that exists → "presentation_ru_1.pptx", "presentation_ru_2.pptx", etc.
     */
-  private def resolveOutputFile(dir: File, nameBase: String, extension: String): File =
+  private def resolveOutputFile(dir: File, stem: String, langCode: String, extension: String): File =
     var counter = 0
-    var file    = File(dir, s"$nameBase.$extension")
+    var file    = File(dir, s"${stem}_$langCode.$extension")
     while file.exists() do
       counter += 1
-      file = File(dir, s"${nameBase}_$counter.$extension")
+      file = File(dir, s"${stem}_${langCode}_$counter.$extension")
     file
 
   private def processFile(
@@ -105,11 +106,12 @@ object Main:
       format: DocumentFormat,
       outputDir: File,
       translator: TranslationService,
-      maxBatchSize: Int
+      maxBatchSize: Int,
+      langCode: String
   ): Unit =
     val ext      = extensionOf(source)
-    val baseName = source.getName.replaceAll(raw"\\." + ext + "$", "_ru")
-    val output   = resolveOutputFile(outputDir, baseName, ext)
+    val stem     = stripExtension(source.getName, ext)
+    val output   = resolveOutputFile(outputDir, stem, langCode, ext)
 
     println(s"[PROCESS] ${source.getName} → ${output.getName}")
     println(s"  Extracting text...")
@@ -137,7 +139,7 @@ object Main:
           println(s"  Warning: $failedCount text segments could not be translated.")
 
         println(s"  Writing translated file...")
-        format.writeTranslated(source, allTranslated, output) match
+        format.writeTranslated(source, allTranslated, output, langCode) match
           case Left(err) =>
             System.err.println(s"  [ERROR] $err")
           case Right(()) =>
@@ -148,3 +150,9 @@ object Main:
     val name = file.getName
     val dot  = name.lastIndexOf('.')
     if dot >= 0 then name.substring(dot + 1).toLowerCase else ""
+
+  /** Remove the trailing .<ext> from a filename, returning the stem. */
+  private def stripExtension(name: String, ext: String): String =
+    val suffix = "." + ext
+    if name.toLowerCase.endsWith(suffix) then name.dropRight(suffix.length)
+    else name

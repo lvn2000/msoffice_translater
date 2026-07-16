@@ -26,7 +26,8 @@ object PptxService extends DocumentFormat:
   override def writeTranslated(
       source: File,
       elements: Seq[TextElement],
-      outputFile: File
+      outputFile: File,
+      langCode: String
   ): Either[String, Unit] =
     val lookup = DocumentService.buildLookup(elements)
     Try {
@@ -71,7 +72,7 @@ object PptxService extends DocumentFormat:
         grp.getShapes.asScala.toSeq.zipWithIndex.flatMap { (child, ci) =>
           extractFromShape(slide, slideIndex, child, ci)
         }
-      case _ => Seq.empty // images, charts, connectors — skip
+      case _ => Seq.empty
 
   private def extractFromTextShape(
       ts: XSLFTextShape,
