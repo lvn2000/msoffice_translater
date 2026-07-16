@@ -5,8 +5,8 @@ import com.typesafe.config.{ConfigFactory, Config => TsConfig}
 /** Application configuration.
   *
   * Reads from `application.conf` on the classpath, with environment variable
-  * overrides. The API key must be set via the `DEEPSEEK_API_KEY` environment
-  * variable, otherwise loading fails.
+  * overrides. The API key must be set via the `API_KEY` environment variable,
+  * otherwise loading fails.
   */
 case class Config(
     apiKey: String,
@@ -22,8 +22,8 @@ case class Config(
 )
 
 object Config:
-  private val DefaultApiUrl   = "https://api.deepseek.com/v1/chat/completions"
-  private val DefaultModel    = "deepseek-chat"
+  private val DefaultApiUrl   = "http://localhost:11434/v1/chat/completions"
+  private val DefaultModel    = "llama3.2"
   private val DefaultMaxBatch = 10
   private val DefaultLangCode = "ru"
 
@@ -31,10 +31,10 @@ object Config:
   def load(): Config =
     val tsConfig: TsConfig = ConfigFactory.load().resolve()
 
-    // Name of the env var that holds the API key — from config, default DEEPSEEK_API_KEY
+    // Name of the env var that holds the API key — from config, default API_KEY
     val apiKeyEnvVar =
-      if tsConfig.hasPath("deepseek.api-key-env") then tsConfig.getString("deepseek.api-key-env")
-      else "DEEPSEEK_API_KEY"
+      if tsConfig.hasPath("llm.api-key-env") then tsConfig.getString("llm.api-key-env")
+      else "API_KEY"
 
     // API key — only from the environment variable named above
     val apiKey = sys.env.getOrElse(
@@ -47,8 +47,8 @@ object Config:
     )
 
     val apiUrl = resolveStr(
-      tsConfig, "deepseek.api-url",
-      "DEEPSEEK_API_URL",
+      tsConfig, "llm.api-url",
+      "API_URL",
       DefaultApiUrl
     )
 
@@ -65,8 +65,8 @@ object Config:
     )
 
     val modelName = resolveStr(
-      tsConfig, "deepseek.model",
-      "DEEPSEEK_MODEL",
+      tsConfig, "llm.model",
+      "MODEL",
       DefaultModel
     )
 

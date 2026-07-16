@@ -110,11 +110,12 @@ class TranslationService(config: Config, adapter: ProviderAdapter):
 
     if translations.size == expected then
       Right(translations)
-    else if translations.size < expected && expected <= 3 then
-      val raw = content.split("\n").toList.map(_.trim).filter(_.nonEmpty)
-      Right(padOrTruncate(raw, expected))
     else
-      Left(s"Expected $expected translations, got ${translations.size}")
+      // Numbered parsing gave fewer/more results — fall back to raw lines
+      // (common with local models that don't format numbered lists precisely)
+      val raw = content.split("\n").toList.map(_.trim).filter(_.nonEmpty)
+      if raw.nonEmpty then Right(padOrTruncate(raw, expected))
+      else Left(s"Expected $expected translations, got ${translations.size}")
 
   private def padOrTruncate(list: List[String], target: Int): List[String] =
     if list.size >= target then list.take(target)

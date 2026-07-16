@@ -20,6 +20,17 @@ object OpenAiAdapter extends ProviderAdapter:
 
   val name = "OpenAI-compatible"
 
+
+  // Ollama's HTTP server sometimes closes the TCP connection between requests.
+  // Without the retry, every other batch would fail and fall back to slow individual translation.
+  // The retry waits 1 second and tries again — which usually works because Ollama
+  // accepts the new connection on the second attempt.
+  // If you're using cloud APIs (DeepSeek, OpenAI, etc.) this never triggers
+  // because their servers handle keep-alive properly.
+  // It's specifically for local models where the server is less robust.
+  private val MaxRetries   = 2
+  private val RetryDelayMs = 1000L
+
   def sendRequest(
       apiKey: String,
       apiUrl: String,
@@ -38,25 +49,34 @@ object OpenAiAdapter extends ProviderAdapter:
       "temperature" -> Json.fromDoubleOrNull(0.0)
     ).noSpaces
 
-    val response: Either[Throwable, Response[String]] = Try {
-      quickRequest
-        .post(uri"$apiUrl")
-        .header("Authorization", s"Bearer $apiKey")
-        .header("Content-Type", "application/json")
-        .body(body)
-        .send()
-    }.toEither
+    def attempt(remaining: Int): Either[String, String] =
+      val response: Either[Throwable, Response[String]] = Try {
+        quickRequest
+          .post(uri"$apiUrl")
+          .header("Authorization", s"Bearer $apiKey")
+          .header("Content-Type", "application/json")
+          .body(body)
+          .send()
+      }.toEither
 
-    for
-      resp    <- response.left.map(e => s"HTTP error: ${e.getMessage}")
-      _       <- Either.cond(resp.code == StatusCode.Ok, (),
-                   s"API ${resp.code}: ${resp.body.take(500)}")
-      json    <- parse(resp.body).left.map(e => s"Invalid JSON: $e")
-      content <- json.hcursor
-                   .downField("choices")
-                   .downN(0)
-                   .downField("message")
-                   .downField("content")
-                   .as[String]
-                   .left.map(_ => s"No content in response: ${resp.body.take(200)}")
-    yield content.trim
+      val result = for
+        resp    <- response.left.map(e => s"HTTP error: ${e.getMessage}")
+        _       <- Either.cond(resp.code == StatusCode.Ok, (),
+                     s"API ${resp.code}: ${resp.body.take(500)}")
+        json    <- parse(resp.body).left.map(e => s"Invalid JSON: $e")
+        content <- json.hcursor
+                     .downField("choices")
+                     .downN(0)
+                     .downField("message")
+                     .downField("content")
+                     .as[String]
+                     .left.map(_ => s"No content in response: ${resp.body.take(200)}")
+      yield content.trim
+
+      result match
+        case Left(err) if remaining > 0 && err.startsWith("HTTP error:") =>
+          Thread.sleep(RetryDelayMs)
+          attempt(remaining - 1)
+        case _ => result
+
+    attempt(MaxRetries)

@@ -30,10 +30,7 @@ object ClaudeAdapter extends ProviderAdapter:
       systemPrompt: String,
       userMessage: String
   ): Either[String, String] =
-    val effectiveUrl = if apiUrl.nonEmpty && apiUrl != "https://api.deepseek.com/v1/chat/completions" then
-      apiUrl
-    else
-      "https://api.anthropic.com/v1/messages"
+    val effectiveUrl = "https://api.anthropic.com/v1/messages"
 
     val body = Json.obj(
       "model"      -> Json.fromString(model),

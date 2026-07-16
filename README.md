@@ -70,17 +70,19 @@ The default language direction is **Ukrainian → Russian**, but any language pa
 
 ### 1. Set the API key
 
-The API key is read from the environment variable named in `deepseek.api-key-env` in `application.conf` (default: `DEEPSEEK_API_KEY`):
+The API key is read from the environment variable named in `llm.api-key-env` in `application.conf` (default: `API_KEY`):
 
 ```bash
-export DEEPSEEK_API_KEY="sk-deepseek-key-here"
+export API_KEY="sk-your-key-here"
 ```
 
 > **Tip:** add this line to your `~/.bashrc` or `~/.profile` to avoid typing it every time.
+>
+> For Ollama (local), any dummy value works: `export API_KEY="ollama"`
 
 You can use a different env var name by changing `application.conf`:
 ```hocon
-deepseek {
+llm {
   api-key-env = "MY_CUSTOM_KEY"
 }
 ```
@@ -119,9 +121,9 @@ All settings can be defined in `src/main/resources/application.conf` or overridd
 | Setting | `application.conf` path | Env var | Default |
 |---|---|---|---|
 | Provider | `provider` | `PROVIDER` | `openai` |
-| API key env var name | `deepseek.api-key-env` | — | `DEEPSEEK_API_KEY` |
-| API URL | `deepseek.api-url` | `DEEPSEEK_API_URL` | `https://api.deepseek.com/v1/chat/completions` |
-| Model | `deepseek.model` | `DEEPSEEK_MODEL` | `deepseek-chat` |
+| API key env var name | `llm.api-key-env` | — | `API_KEY` |
+| API URL | `llm.api-url` | `API_URL` | `http://localhost:11434/v1/chat/completions` |
+| Model | `llm.model` | `MODEL` | `llama3.2` |
 | Source directory | `app.source-dir` | `SOURCE_DIR` | `src/main/resources/source` |
 | Output directory | `app.output-dir` | `OUTPUT_DIR` | `src/main/resources/output` |
 | Batch size | `app.max-batch-size` | `MAX_BATCH_SIZE` | `10` |
@@ -149,16 +151,26 @@ Set `provider` in `application.conf` to switch between backends:
 
 | `provider` | Adapter | Supported models | Example config |
 |---|---|---|---|
-| `openai` | OpenAI-compatible (DeepSeek, ChatGPT, Groq, Together, etc.) | `deepseek-chat`, `gpt-4o`, `llama-3.3-70b-versatile` | `deepseek.api-url` + `deepseek.model` |
-| `gemini` | Google Gemini | `gemini-2.0-flash`, `gemini-1.5-pro` | `deepseek.model` = model name; API key in URL query |
-| `claude` | Anthropic Claude | `claude-sonnet-4-20250514`, `claude-haiku-3-5-sonnet` | `deepseek.model` = model ID; `x-api-key` header |
+| `openai` | OpenAI-compatible (Ollama, DeepSeek, ChatGPT, Groq…) | `llama3.2`, `gpt-4o`, `deepseek-chat` | `llm.api-url` + `llm.model` |
+| `gemini` | Google Gemini | `gemini-2.0-flash`, `gemini-1.5-pro` | `llm.model` = model name; API key in URL query |
+| `claude` | Anthropic Claude | `claude-sonnet-4-20250514`, `claude-haiku-3-5-sonnet` | `llm.model` = model ID; `x-api-key` header |
 
 Examples for different providers:
 
 ```hocon
-# DeepSeek (default)
+# Ollama / local model (default)
 provider = "openai"
-deepseek {
+llm {
+  api-key-env = "API_KEY"
+  api-url     = "http://localhost:11434/v1/chat/completions"
+  model       = "llama3.2"
+}
+```
+
+```hocon
+# DeepSeek
+provider = "openai"
+llm {
   api-key-env = "DEEPSEEK_API_KEY"
   api-url     = "https://api.deepseek.com/v1/chat/completions"
   model       = "deepseek-chat"
@@ -168,7 +180,7 @@ deepseek {
 ```hocon
 # OpenAI / ChatGPT
 provider = "openai"
-deepseek {
+llm {
   api-key-env = "OPENAI_API_KEY"
   api-url     = "https://api.openai.com/v1/chat/completions"
   model       = "gpt-4o"
@@ -178,7 +190,7 @@ deepseek {
 ```hocon
 # Google Gemini
 provider = "gemini"
-deepseek {
+llm {
   api-key-env = "GEMINI_API_KEY"
   model       = "gemini-2.0-flash"
 }
@@ -188,7 +200,7 @@ deepseek {
 ```hocon
 # Anthropic Claude
 provider = "claude"
-deepseek {
+llm {
   api-key-env = "ANTHROPIC_API_KEY"
   model       = "claude-sonnet-4-20250514"
 }
@@ -225,15 +237,16 @@ When running from a JAR, ensure the source/output directories exist on the files
 ## Environment variables reference
 
 ```bash
-export DEEPSEEK_API_KEY="sk-..."     # required (default name; set via api-key-env)
+export API_KEY="sk-..."              # required (default name; set via api-key-env)
 export PROVIDER="openai"           # openai, gemini, claude
-export DEEPSEEK_MODEL="deepseek-chat"
-export DEEPSEEK_API_URL="https://..."
+export MODEL="llama3.2"
+export API_URL="http://localhost:11434/v1/chat/completions"
 export SOURCE_DIR="/absolute/path"
 export OUTPUT_DIR="/absolute/path"
 export MAX_BATCH_SIZE="5"
 export SOURCE_LANG="Ukrainian"       # "auto" or empty = auto-detect
 export TARGET_LANG="Russian"
+export LANG_CODE="ru"                # output filename suffix + doc language
 
 ## License
 
