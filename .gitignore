@@ -25,4 +25,5 @@ src/main/resources/output/*
 !src/main/resources/output/.gitkeep
 
 # Keep source/.gitkeep but not the pptx files themselves
-src/main/resources/source/*.pptx
+src/main/resources/source/*
+!src/main/resources/source/.gitkeep
