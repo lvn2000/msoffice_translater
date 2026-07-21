@@ -35,11 +35,13 @@ object Main:
     val sourceDir = new File(cfg.sourceDir)
     val outputDir = new File(cfg.outputDir)
 
-    if !sourceDir.isDirectory then
-      System.err.println(s"Source directory '${cfg.sourceDir}' does not exist.")
-      System.exit(1)
-
+    // Create both directories if they don't exist — no need for .gitkeep
+    sourceDir.mkdirs()
     outputDir.mkdirs()
+
+    if !sourceDir.isDirectory then
+      System.err.println(s"Cannot create source directory '${cfg.sourceDir}'.")
+      System.exit(1)
 
     val files = discoverFiles(sourceDir)
 

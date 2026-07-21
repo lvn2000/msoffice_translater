@@ -40,10 +40,8 @@ The default language direction is **Ukrainian → Russian**, but any language pa
 │       ├── resources/
 │       │   ├── application.conf        ← configuration (key, paths, language, model)
 │       │   ├── logback.xml
-│       │   ├── source/                  ← put .pptx / .docx / .pdf / .xls / .xlsx files here
-│       │   │   └── .gitkeep
-│       │   └── output/                  ← translated files appear here
-│       │       └── .gitkeep
+│   │   ├── source/                  ← place .pptx / .docx / .pdf / .xls / .xlsx files here
+│   │   └── output/                  ← translated files appear here
 │       └── scala/
 │           ├── Main.scala               ← entry point
 │           ├── config/Config.scala      ← reads application.conf + env vars

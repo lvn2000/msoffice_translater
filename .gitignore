@@ -20,10 +20,10 @@ Thumbs.db
 # Local override — uncomment if you put real secrets in application.conf
 # application.conf
 
-# Translated output files (large binaries) — keep .gitkeep
+# Translated output files (large binaries) — keep .gitkeep only
 src/main/resources/output/*
 !src/main/resources/output/.gitkeep
 
-# Keep source/.gitkeep but not the pptx files themselves
+# Keep source clean — don't commit input documents
 src/main/resources/source/*
 !src/main/resources/source/.gitkeep
