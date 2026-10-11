@@ -20,16 +20,19 @@ object PdfService extends DocumentFormat:
 
   override val extensions: Seq[String] = Seq("pdf")
 
+  override def unitName: String = "page"
+
   private val FontSize   = 11f
   private val LineHeight = 15f
   private val Margin     = 50f
 
-  override def extractTexts(file: File): Either[String, Seq[TextElement]] =
+  override def extractTexts(file: File, maxUnits: Int): Either[String, Seq[TextElement]] =
     Try {
       Using.resource(Loader.loadPDF(file)) { doc =>
         val totalPages = doc.getNumberOfPages
+        val pageCount  = if maxUnits > 0 then math.min(totalPages, maxUnits) else totalPages
 
-        (0 until totalPages).flatMap { pageIndex =>
+        (0 until pageCount).flatMap { pageIndex =>
           val stripper = new PDFTextStripper()
           stripper.setSortByPosition(true)
           stripper.setStartPage(pageIndex + 1)
@@ -68,7 +71,7 @@ object PdfService extends DocumentFormat:
         try
           val font = loadUnicodeFont(destDoc)
 
-          for pageIdx <- 0 until srcDoc.getNumberOfPages do
+          for pageIdx <- byPage.keys.toSeq.sorted do
             val srcPage  = srcDoc.getPage(pageIdx)
             val mediaBox = srcPage.getMediaBox
             val destPage = new PDPage(mediaBox)

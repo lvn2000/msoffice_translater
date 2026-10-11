@@ -12,13 +12,21 @@ object DocxService extends DocumentFormat:
 
   override val extensions: Seq[String] = Seq("docx")
 
-  override def extractTexts(file: File): Either[String, Seq[TextElement]] =
+  /** Word documents flow without fixed pages, so a partial limit counts
+    * leading body paragraphs and skips tables/headers/footers.
+    */
+  override def unitName: String = "paragraph"
+
+  override def extractTexts(file: File, maxUnits: Int): Either[String, Seq[TextElement]] =
     Try {
       Using.resource(new XWPFDocument(FileInputStream(file))) { doc =>
-        extractBodyParagraphs(doc) ++
-        extractTableCells(doc) ++
-        extractHeaders(doc) ++
-        extractFooters(doc)
+        if maxUnits > 0 then
+          extractBodyParagraphs(doc, Some(maxUnits))
+        else
+          extractBodyParagraphs(doc, None) ++
+          extractTableCells(doc) ++
+          extractHeaders(doc) ++
+          extractFooters(doc)
       }
     }.toEither.left.map(e => s"Failed to read docx: ${e.getMessage}")
 
@@ -138,9 +146,13 @@ object DocxService extends DocumentFormat:
   // Private helpers
   // --------------------------------------------------------------------------
 
-  private def extractBodyParagraphs(doc: XWPFDocument): Seq[TextElement] =
+  private def extractBodyParagraphs(doc: XWPFDocument, limit: Option[Int]): Seq[TextElement] =
+    val paragraphs = doc.getParagraphs.asScala.to(LazyList).zipWithIndex
+    val selected   = limit match
+      case Some(n) => paragraphs.take(n)
+      case None    => paragraphs
     for
-      (para, pi) <- doc.getParagraphs.asScala.to(LazyList).zipWithIndex
+      (para, pi) <- selected
       if para.getRuns != null
       (run, ri)  <- para.getRuns.asScala.to(LazyList).zipWithIndex
       text = run.getText(0)

@@ -14,11 +14,19 @@ trait DocumentFormat:
   /** File extensions this format handles (e.g. "pptx", "docx", "xls"). */
   def extensions: Seq[String]
 
+  /** Name of the structural unit counted by a partial-translation limit
+    * (e.g. "page" for pdf, "slide" for pptx). Used for progress messages.
+    */
+  def unitName: String
+
   /** Extract all text elements from a file.
     *
+    * @param file     the source file
+    * @param maxUnits when > 0, only the first `maxUnits` structural units
+    *                 (see `unitName`) are extracted; 0 or negative means all.
     * @return Right(elements) on success, Left(error) on failure
     */
-  def extractTexts(file: File): Either[String, Seq[TextElement]]
+  def extractTexts(file: File, maxUnits: Int): Either[String, Seq[TextElement]]
 
   /** Write translated texts into a copy of the source file.
     *

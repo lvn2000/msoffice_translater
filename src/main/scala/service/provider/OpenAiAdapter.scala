@@ -36,9 +36,10 @@ object OpenAiAdapter extends ProviderAdapter:
       apiUrl: String,
       model: String,
       systemPrompt: String,
-      userMessage: String
+      userMessage: String,
+      extraBodyJson: String
   ): Either[String, String] =
-    val body = Json.obj(
+    val baseBody = Json.obj(
       "model"       -> Json.fromString(model),
       "messages"    -> Json.arr(
         Json.obj("role" -> Json.fromString("system"),
@@ -47,7 +48,8 @@ object OpenAiAdapter extends ProviderAdapter:
                  "content" -> Json.fromString(userMessage))
       ),
       "temperature" -> Json.fromDoubleOrNull(0.0)
-    ).noSpaces
+    )
+    val body = mergeExtraBody(baseBody, extraBodyJson).noSpaces
 
     def attempt(remaining: Int): Either[String, String] =
       val response: Either[Throwable, Response[String]] = Try {

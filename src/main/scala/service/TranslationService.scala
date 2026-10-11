@@ -48,7 +48,7 @@ class TranslationService(config: Config, adapter: ProviderAdapter):
     for
       content <- adapter.sendRequest(
                    config.apiKey, config.apiUrl, config.modelName,
-                   systemPrompt, numberedText
+                   systemPrompt, numberedText, config.extraBody
                  )
       parsed  <- parseTranslation(content, batch.elements.size)
       updated  = batch.copy(elements = batch.elements.zip(parsed).map {
@@ -89,7 +89,7 @@ class TranslationService(config: Config, adapter: ProviderAdapter):
   private def translateSingle(text: String): Either[String, String] =
     adapter.sendRequest(
       config.apiKey, config.apiUrl, config.modelName,
-      singlePrompt, text
+      singlePrompt, text, config.extraBody
     )
 
   /** Parse numbered output ("1. text\\n2. text…") back into a list. */

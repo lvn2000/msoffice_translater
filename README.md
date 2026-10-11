@@ -10,6 +10,7 @@ The default language direction is **Ukrainian → Russian**, but any language pa
 
 - **Configurable language direction** — set any source/target pair, or let the model auto-detect the source
 - **Batch translation** — multiple text segments are sent in a single API call for efficiency (configurable batch size)
+- **Partial translation** — translate only the first N pages/slides/sheets/paragraphs of each file, useful for sampling translation quality before a full run (`sbt "run 10"`)
 - **Formatting preservation** — font style, size, color, bold/italic, and other formatting are retained
 - **PPTX support** — slides, text shapes, tables, grouped shapes
 - **DOCX support** — body paragraphs and table cells (including nested per-cell paragraphs)
@@ -122,13 +123,45 @@ All settings can be defined in `src/main/resources/application.conf` or overridd
 | API key env var name | `llm.api-key-env` | — | `API_KEY` |
 | API URL | `llm.api-url` | `API_URL` | `http://localhost:11434/v1/chat/completions` |
 | Model | `llm.model` | `MODEL` | `llama3.2` |
+| Extra request body | `llm.extra-body` | `EXTRA_BODY` | `{}` |
 | Source directory | `app.source-dir` | `SOURCE_DIR` | `src/main/resources/source` |
 | Output directory | `app.output-dir` | `OUTPUT_DIR` | `src/main/resources/output` |
 | Batch size | `app.max-batch-size` | `MAX_BATCH_SIZE` | `10` |
+| Partial limit | `app.max-pages` | `MAX_PAGES` | `0` (full document) |
 | Source language | `app.source-lang` | `SOURCE_LANG` | `auto` |
 | Target language | `app.target-lang` | `TARGET_LANG` | `Russian` |
 
 Resolution order: **`application.conf` → environment variable → hardcoded default**.
+
+### Partial translation (quality evaluation)
+
+To translate only part of each document — handy for sampling translation quality before committing to a full run — set `app.max-pages` to a positive number. The default `0` translates the whole document.
+
+The "unit" counted depends on the format:
+
+| Format | Unit |
+|---|---|
+| PDF | pages |
+| PPTX | slides |
+| XLS/XLSX | sheets |
+| DOCX | paragraphs (Word has no fixed pages) |
+
+Two ways to set it:
+
+```hocon
+# application.conf
+app {
+  max-pages = 10
+}
+```
+
+```bash
+# or per run, overriding application.conf
+sbt "run 10"        # translate the first 10 units of each file
+sbt run             # full document (default)
+```
+
+For Office formats (PPTX/DOCX/XLS), the untranslated remainder is preserved as-is in the output. For PDF, the output contains only the translated pages/slides that were extracted.
 
 ### Language direction
 
@@ -149,7 +182,7 @@ Set `provider` in `application.conf` to switch between backends:
 
 | `provider` | Adapter | Supported models | Example config |
 |---|---|---|---|
-| `openai` | OpenAI-compatible (Ollama, DeepSeek, ChatGPT, Groq…) | `llama3.2`, `gpt-4o`, `deepseek-chat` | `llm.api-url` + `llm.model` |
+| `openai` | OpenAI-compatible (Ollama, DeepSeek, ChatGPT, Groq…) | `llama3.2`, `gpt-4o`, `deepseek-flash` | `llm.api-url` + `llm.model` |
 | `gemini` | Google Gemini | `gemini-2.0-flash`, `gemini-1.5-pro` | `llm.model` = model name; API key in URL query |
 | `claude` | Anthropic Claude | `claude-sonnet-4-20250514`, `claude-haiku-3-5-sonnet` | `llm.model` = model ID; `x-api-key` header |
 
@@ -166,12 +199,14 @@ llm {
 ```
 
 ```hocon
-# DeepSeek
+# DeepSeek (current models: deepseek-flash, deepseek-v4-pro)
 provider = "openai"
 llm {
   api-key-env = "DEEPSEEK_API_KEY"
-  api-url     = "https://api.deepseek.com/v1/chat/completions"
-  model       = "deepseek-chat"
+  api-url     = "https://api.deepseek.com/chat/completions"
+  model       = "deepseek-flash"
+  # DeepSeek V4 thinking mode is on by default; disable it for translation
+  extra-body  = """{"thinking": {"type": "disabled"}}"""
 }
 ```
 
@@ -245,6 +280,8 @@ export MAX_BATCH_SIZE="5"
 export SOURCE_LANG="Ukrainian"       # "auto" or empty = auto-detect
 export TARGET_LANG="Russian"
 export LANG_CODE="ru"                # output filename suffix + doc language
+export MAX_PAGES="0"                # >0 = translate only first N units per file
+export EXTRA_BODY='{}'              # extra JSON merged into the request body
 
 ## License
 

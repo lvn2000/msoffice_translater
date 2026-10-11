@@ -29,11 +29,12 @@ object GeminiAdapter extends ProviderAdapter:
       apiUrl: String,
       model: String,
       systemPrompt: String,
-      userMessage: String
+      userMessage: String,
+      extraBodyJson: String
   ): Either[String, String] =
     val fullUrl = s"$ApiBase/models/$model:generateContent?key=$apiKey"
 
-    val body = Json.obj(
+    val baseBody = Json.obj(
       "system_instruction" -> Json.obj(
         "parts" -> Json.arr(
           Json.obj("text" -> Json.fromString(systemPrompt))
@@ -46,7 +47,8 @@ object GeminiAdapter extends ProviderAdapter:
           )
         )
       )
-    ).noSpaces
+    )
+    val body = mergeExtraBody(baseBody, extraBodyJson).noSpaces
 
     val response: Either[Throwable, Response[String]] = Try {
       quickRequest

@@ -18,7 +18,9 @@ case class Config(
     maxBatchSize: Int,
     sourceLang: String,
     targetLang: String,
-    langCode: String
+    langCode: String,
+    extraBody: String,
+    maxPages: Int
 )
 
 object Config:
@@ -100,6 +102,23 @@ object Config:
       DefaultLangCode
     )
 
+    // Extra JSON merged into the provider request body (provider-specific).
+    // Used e.g. to disable DeepSeek V4 thinking mode, which is on by default.
+    val extraBody = resolveStr(
+      tsConfig, "llm.extra-body",
+      "EXTRA_BODY",
+      "{}"
+    )
+
+    // Partial-translation limit: when > 0, only the first N units
+    // (pages/slides/sheets/paragraphs) of each file are translated.
+    // 0 or negative translates the whole document.
+    val maxPages = resolveInt(
+      tsConfig, "app.max-pages",
+      "MAX_PAGES",
+      0
+    )
+
     Config(
       apiKey       = apiKey,
       apiUrl       = apiUrl,
@@ -110,7 +129,9 @@ object Config:
       maxBatchSize = maxBatchSize,
       sourceLang   = sourceLang,
       targetLang   = targetLang,
-      langCode     = langCode
+      langCode     = langCode,
+      extraBody    = extraBody,
+      maxPages     = maxPages
     )
 
   // --------------------------------------------------------------------------

@@ -16,7 +16,13 @@ import java.io.File
 object Main:
 
   def main(args: Array[String]): Unit =
-    val cfg = Config.load()
+    val base = Config.load()
+
+    // Optional CLI override: `sbt "run 10"` translates only the first 10 units.
+    val cfg = args.headOption.flatMap(_.trim.toIntOption) match
+      case Some(n) => base.copy(maxPages = n)
+      case None    => base
+
     println(s"Source directory: ${cfg.sourceDir}")
     println(s"Output directory: ${cfg.outputDir}")
 
@@ -30,6 +36,8 @@ object Main:
     println(s"Provider:    ${adapter.name}")
     println(s"Model:       ${cfg.modelName}")
     println(s"Lang code:   ${cfg.langCode}")
+    if cfg.maxPages > 0 then
+      println(s"Partial:     first ${cfg.maxPages} unit(s) per file")
     println()
 
     val sourceDir = new File(cfg.sourceDir)
@@ -53,7 +61,7 @@ object Main:
     val translator = TranslationService(cfg, adapter)
 
     files.foreach { (file, format) =>
-      processFile(file, format, outputDir, translator, cfg.maxBatchSize, cfg.langCode)
+      processFile(file, format, outputDir, translator, cfg.maxBatchSize, cfg.langCode, cfg.maxPages)
       println()
     }
 
@@ -109,16 +117,19 @@ object Main:
       outputDir: File,
       translator: TranslationService,
       maxBatchSize: Int,
-      langCode: String
+      langCode: String,
+      maxPages: Int
   ): Unit =
     val ext      = extensionOf(source)
     val stem     = stripExtension(source.getName, ext)
     val output   = resolveOutputFile(outputDir, stem, langCode, ext)
 
-    println(s"[PROCESS] ${source.getName} → ${output.getName}")
-    println(s"  Extracting text...")
+    val limitNote = if maxPages > 0 then s" (first $maxPages ${format.unitName}s)" else ""
 
-    format.extractTexts(source) match
+    println(s"[PROCESS] ${source.getName} → ${output.getName}")
+    println(s"  Extracting text$limitNote...")
+
+    format.extractTexts(source, maxPages) match
       case Left(err) =>
         System.err.println(s"  [ERROR] $err")
         return

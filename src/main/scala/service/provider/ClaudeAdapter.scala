@@ -28,11 +28,12 @@ object ClaudeAdapter extends ProviderAdapter:
       apiUrl: String,
       model: String,
       systemPrompt: String,
-      userMessage: String
+      userMessage: String,
+      extraBodyJson: String
   ): Either[String, String] =
     val effectiveUrl = "https://api.anthropic.com/v1/messages"
 
-    val body = Json.obj(
+    val baseBody = Json.obj(
       "model"      -> Json.fromString(model),
       "max_tokens" -> Json.fromInt(4096),
       "system"     -> Json.fromString(systemPrompt),
@@ -40,7 +41,8 @@ object ClaudeAdapter extends ProviderAdapter:
         Json.obj("role" -> Json.fromString("user"),
                  "content" -> Json.fromString(userMessage))
       )
-    ).noSpaces
+    )
+    val body = mergeExtraBody(baseBody, extraBodyJson).noSpaces
 
     val response: Either[Throwable, Response[String]] = Try {
       quickRequest

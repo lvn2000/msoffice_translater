@@ -12,11 +12,16 @@ object XlsService extends DocumentFormat:
 
   override val extensions: Seq[String] = Seq("xls", "xlsx")
 
-  override def extractTexts(file: File): Either[String, Seq[TextElement]] =
+  override def unitName: String = "sheet"
+
+  override def extractTexts(file: File, maxUnits: Int): Either[String, Seq[TextElement]] =
     Try {
       Using.resource(WorkbookFactory.create(file)) { wb =>
+        val sheetCount =
+          if maxUnits > 0 then math.min(wb.getNumberOfSheets, maxUnits)
+          else wb.getNumberOfSheets
         for
-          si <- (0 until wb.getNumberOfSheets).to(LazyList)
+          si <- (0 until sheetCount).to(LazyList)
           sheet = wb.getSheetAt(si)
           (row, ri) <- sheet.rowIterator().asScala.to(LazyList).zipWithIndex
           (cell, ci) <- row.cellIterator().asScala.to(LazyList).zipWithIndex

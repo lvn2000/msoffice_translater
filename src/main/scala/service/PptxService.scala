@@ -12,11 +12,15 @@ object PptxService extends DocumentFormat:
 
   override val extensions: Seq[String] = Seq("pptx")
 
-  override def extractTexts(file: File): Either[String, Seq[TextElement]] =
+  override def unitName: String = "slide"
+
+  override def extractTexts(file: File, maxUnits: Int): Either[String, Seq[TextElement]] =
     Try {
       Using.resource(new XMLSlideShow(FileInputStream(file))) { ppt =>
+        val slides = ppt.getSlides.asScala.to(LazyList).zipWithIndex
+        val limited = if maxUnits > 0 then slides.take(maxUnits) else slides
         for
-          (slide, si) <- ppt.getSlides.asScala.to(LazyList).zipWithIndex
+          (slide, si) <- limited
           (shape, shi) <- slide.getShapes.asScala.to(LazyList).zipWithIndex
           elem <- extractFromShape(slide, si, shape, shi)
         yield elem
