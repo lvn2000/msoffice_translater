@@ -36,7 +36,9 @@ object PdfService extends DocumentFormat:
       height: Float,
       fontSize: Float,
       codeLike: Boolean,
-      horizontal: Boolean
+      horizontal: Boolean,
+      colLeft: Float,  // horizontal bounds of this segment's column (for the cover)
+      colRight: Float
   ):
     /** Lines worth translating: horizontal, not code, containing letters. */
     def translatable: Boolean =
@@ -68,21 +70,31 @@ object PdfService extends DocumentFormat:
         tps.groupBy(tp => math.round(tp.getYDirAdj)).toSeq.sortBy(_._1).flatMap {
           (_, glyphs) =>
             val sorted = glyphs.sortBy(_.getXDirAdj)
-            val segments = mutable.ArrayBuffer.empty[mutable.ArrayBuffer[TextPosition]]
+            val segments = mutable.ArrayBuffer.empty[(mutable.ArrayBuffer[TextPosition], Int)]
             var current  = mutable.ArrayBuffer.empty[TextPosition]
             var currentCol = Int.MinValue
             for tp <- sorted do
               val col = gutters.count { case (_, g1) => tp.getXDirAdj >= g1 }
               if current.nonEmpty && col != currentCol then
-                segments += current
+                segments += ((current, currentCol))
                 current = mutable.ArrayBuffer.empty[TextPosition]
               current += tp
               currentCol = col
-            if current.nonEmpty then segments += current
-            segments.toSeq.flatMap(toLineInfo)
+            if current.nonEmpty then segments += ((current, currentCol))
+            segments.toSeq.flatMap { (seg, col) =>
+              // Outer edges are unbounded (allow overhang padding); inner edges
+              // are clamped to the detected gutters so separators are never erased.
+              val colLeft  = if col <= 0 then Float.NegativeInfinity else gutters(col - 1)._2
+              val colRight = if col >= gutters.size then Float.PositiveInfinity else gutters(col)._1
+              toLineInfo(seg, colLeft, colRight)
+            }
         }
 
-    private def toLineInfo(seg: mutable.ArrayBuffer[TextPosition]): Option[LineInfo] =
+    private def toLineInfo(
+        seg: mutable.ArrayBuffer[TextPosition],
+        colLeft: Float,
+        colRight: Float
+    ): Option[LineInfo] =
       val segText = seg.map(tp => Option(tp.getUnicode).getOrElse("")).mkString.trim
       if segText.isEmpty then None
       else
@@ -100,7 +112,9 @@ object PdfService extends DocumentFormat:
           height     = bottoms.max - ys.min,
           fontSize   = if sfs > 0f then sfs else 10f,
           codeLike   = isCodeLike(segText),
-          horizontal = horizontal
+          horizontal = horizontal,
+          colLeft    = colLeft,
+          colRight   = colRight
         ))
 
     /** Detect vertical gutters: x-ranges that almost no text line crosses. */
@@ -195,29 +209,33 @@ object PdfService extends DocumentFormat:
                     translated =>
                       val text = sanitize(translated)
                       if text.nonEmpty && line.width > 0f && line.height > 0f then
-                        // Keep the translation within the original line's width so
-                        // it stays inside its table cell / column.
-                        val maxWidth = line.width + 2f
+                        // Keep the translation within the segment's column so it
+                        // stays inside its table cell.
+                        val byCol    = line.colRight - line.x
+                        val maxWidth = math.max(10f,
+                          if byCol.isPosInfinity then line.width + 2f
+                          else math.min(line.width + 2f, byCol))
                         val size     = fitSize(font, text, maxWidth, line.fontSize)
                         // size == -1 means the font cannot render this text
                         if size > 0f then
-                          // getYDirAdj is the baseline, measured from the top of
-                          // the page. Glyphs rise ~0.70*fontSize above it and drop
-                          // below only when the line actually has descenders.
+                          // getYDirAdj is the baseline (from the top). Bold/italic
+                          // glyphs rise higher and overhang horizontally, so use a
+                          // slightly larger cover — clamped to the column bounds so
+                          // table separators/rules are never erased.
                           val fs        = line.fontSize
                           val baselineY = pageHeight - line.top
                           val hasDesc   = line.text.exists(c => "gjpqyQ,;()[]{}|/".indexOf(c) >= 0)
-                          val ascent    = 0.70f * fs
-                          val descent   = if hasDesc then 0.20f * fs else 0.04f * fs
-                          // Tight overpaint: stays clear of the table grid rules
-                          // that run through the gaps between rows.
+                          val ascent    = 0.82f * fs
+                          val descent   = if hasDesc then 0.22f * fs else 0.06f * fs
                           val coverTopTD    = line.top - ascent
                           val coverBottomTD = line.top + descent
                           val coverBottomY  = pageHeight - coverBottomTD
                           val coverHeight   = coverBottomTD - coverTopTD
+                          val coverLeft     = math.max(line.colLeft, line.x - 1f)
+                          val coverRight    = math.min(line.colRight, line.x + line.width + 1.5f)
                           // 1) overpaint the original line
                           stream.setNonStrokingColor(1f) // white
-                          stream.addRect(line.x, coverBottomY, line.width + 0.3f, coverHeight)
+                          stream.addRect(coverLeft, coverBottomY, coverRight - coverLeft, coverHeight)
                           stream.fill()
                           // 2) draw the translation at the same baseline
                           stream.beginText()
