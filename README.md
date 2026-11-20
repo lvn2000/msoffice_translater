@@ -2,7 +2,7 @@
 
 Translate Microsoft Office documents (`.pptx`, `.docx`, `.xls`, `.xlsx`) and PDF files (`.pdf`) using configurable LLM providers (DeepSeek, ChatGPT, Gemini, Claude). Only text is translated — images, charts, and other media are preserved as-is.
 
-> **Note on PDF:** Since PDF is a rendering format without a structured text-run model, translated text is written into a **new** PDF. Original graphics, images, and precise layout are not preserved. For PPTX and DOCX all original formatting and media are retained.
+> **Note on PDF:** PDF has no editable text model, so translations are drawn **on top of the original pages** (a tight white overpaint hides each original line, then the translation is drawn at the same baseline). This preserves images, figures and page layout. Multi-column layouts (e.g. tables) are detected: columns are split at vertical gutters, so each cell is translated independently and the table grid (rules, shading, cell borders) is left intact. Monospaced/C program-code lines are detected and left completely untouched, so code listings keep their exact formatting. For PPTX and DOCX all original formatting and media are retained natively.
 
 The default language direction is **Ukrainian → Russian**, but any language pair is supported (configured in `application.conf`). Source language can be auto-detected by the model.
 
@@ -14,7 +14,7 @@ The default language direction is **Ukrainian → Russian**, but any language pa
 - **Formatting preservation** — font style, size, color, bold/italic, and other formatting are retained
 - **PPTX support** — slides, text shapes, tables, grouped shapes
 - **DOCX support** — body paragraphs and table cells (including nested per-cell paragraphs)
-- **PDF support** — per-page paragraph extraction; translated output is a new PDF
+- **PDF support** — per-page line extraction; translations are overlaid on the original pages so images and layout are preserved, and code (monospaced) lines are skipped
 - **XLS/XLSX support** — string cells in all sheets; numeric, boolean and formula cells are left untouched
 - **Pluggable provider architecture** — switch between DeepSeek, ChatGPT, Gemini, or Claude with one config change
 - **Auto-counter for output files** — if `_ru.pptx`/`_ru.docx` already exists, creates `_ru_1.pptx`, `_ru_2.pptx`, etc. (never overwrites)
@@ -161,7 +161,7 @@ sbt "run 10"        # translate the first 10 units of each file
 sbt run             # full document (default)
 ```
 
-For Office formats (PPTX/DOCX/XLS), the untranslated remainder is preserved as-is in the output. For PDF, the output contains only the translated pages/slides that were extracted.
+For Office formats (PPTX/DOCX/XLS), the untranslated remainder is preserved as-is in the output. For PDF, the untranslated pages are also preserved (only the first N pages are overlaid with translations).
 
 ### Language direction
 
@@ -258,7 +258,7 @@ When running from a JAR, ensure the source/output directories exist on the files
 1. **Extract** — the appropriate service (`PptxService` for `.pptx`, `DocxService` for `.docx`, `PdfService` for `.pdf`, `XlsService` for `.xls`/`.xlsx`) opens the file and walks every text run/paragraph/cell, recording each text's position
 2. **Batch** — texts are grouped into batches (default 10)
 3. **Translate** — each batch is sent via the configured `ProviderAdapter` (OpenAI-compatible, Gemini, or Claude) as a numbered list with a system prompt for the configured language direction. The response is parsed back into individual translations
-4. **Write** — the service writes the translated text back. For PPTX/DOCX/XLS this preserves all original formatting and media. For PDF, a new document is created with the translated text
+4. **Write** — the service writes the translated text back. For PPTX/DOCX/XLS this preserves all original formatting and media. For PDF, the translation is drawn over the original page (original line overpainted in white) so images and layout stay intact; code/monospaced lines are left untouched
 
 ## Error Handling
 
